@@ -1,0 +1,450 @@
+---
+title: HMEC 240L HGF figures
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r "setup", include=FALSE}
+knitr::opts_chunk$set(fig.width=6, fig.height=4, echo=FALSE, warning=FALSE, message=FALSE, cache=FALSE)
+
+library(tidyverse)
+library(scales)
+library(RColorBrewer)
+library(ComplexHeatmap)
+
+```
+
+
+```{r loadData}
+
+study <- "hmec240l_ss4"
+fileName <- "hmec240l_ss4_rr_RUV_level3.tsv"
+
+l3 <- read_csv(paste0("../Data/",fileName), progress = FALSE) %>%
+  filter(!Ligand %in% c("KNG1|HMW", "THPO|1", "LYVE1", "JAG2|Long", "DLL1|1", "AREG"),
+         !ECMp %in% c("gelatin","air", "NID1|1"))
+
+validation_data <- read_csv("../Data/IF_validation_results_20200415.csv",
+                            col_types = cols(Cells = col_double(),
+                                             ECM = col_character(),
+                                             Ligand = col_character(),
+                                             K19_LEP = col_double(),
+                                             Experiment = col_character())) %>%
+  rename(ECMp = ECM) %>%
+  mutate(ECMp = str_replace(ECMp, "C1", "COL1"),
+         Ligand = str_replace(Ligand, "Wnt", "WNT")) %>%
+  filter(ECMp == "COL1",
+         Cells == "240") %>%
+  mutate(Experiment = str_replace(Experiment, "20180927", "Exp_1"),
+         Experiment = str_replace(Experiment, "20181108", "Exp_2"),
+         Experiment = str_replace(Experiment, "20190110", "Exp_3"),
+         Experiment = str_replace(Experiment, "20190125", "Exp_4"),
+         Experiment = str_replace(Experiment, "20190308", "Exp_5"),
+         Experiment = str_replace(Experiment, "20190408", "Exp_6"),
+         Experiment = str_replace(Experiment, "20200410", "Exp_7"))
+
+create_pdfs <- TRUE
+
+lep_color <-"#72ac4c"
+mep_color <- "#fd7f7c"
+```
+
+input data is from `r paste0("Data/",fileName)`
+
+```{r rankedLists}
+#clean up the signals, group by MEP, median summarise, rank by each signal, 
+#calculate the rank products of the raw and normalized signals
+sem <- function(x){
+  x_sem <- sd(x)/sqrt(length(x))
+  return(x_sem)
+}
+
+df_MEPs <- l3 %>%
+  filter(!is.na(Cytoplasm_PA_Gated_KRT19PositiveProportion),
+         !ECMp %in% c("gelatin","air", "NID1|1")) %>%
+  select(Cytoplasm_PA_Gated_KRT19PositiveProportionNorm,
+         ECMp, Ligand) %>%
+  group_by(ECMp, Ligand)%>%
+  summarise(Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem = sem(Cytoplasm_PA_Gated_KRT19PositiveProportionNorm),
+            Cytoplasm_PA_Gated_KRT19PositiveProportionNorm = median(Cytoplasm_PA_Gated_KRT19PositiveProportionNorm)) %>%
+  mutate(MEP=paste(ECMp,Ligand,sep = "_"))%>%
+  ungroup()
+
+#Start with the MEP summarized values, filter to the COL1 spots
+df_ligands <- df_MEPs %>%
+  filter(ECMp=="COL1")
+
+#Start with the MEP summarized values, filter to the FBS-paired MEPs
+df_ECMp <- df_MEPs %>%
+  filter(Ligand=="FBS")
+
+```
+
+<br>
+
+#### Overview
+The MEMA tech paper focuses on experiment design and data normalizations. A biologically-driven finding will help validate the methods and make for a compelling story. There is a need for luminal cells in other assays and we hypothesize that MEMAs can be used to define microenvironments that promote their growth.  
+
+The HMEC240L SS4 assay has DNA(DAPI), basal cell type (KRT5), luminal cell type (KRT19 ) and active S phase (EdU) biomarkers.  The cell counts come from the segmenting and counting the nuclei based on the DAPI signal. The mean intensity of the KRT19 stain in the cytoplasm shows a bimodal distribution that is easily gated into KRT19 high/low populations. Since each ME spot forms its own population, we can calculate the proportion of cells that are in each gate.  
+
+
+#### Luminal proportion  
+
+We can use the gated KRT19 signal in the cytoplasm and the number of DAPI stained nuclei to calculate the proportion of luminal cells at the end of the assay. We can then compare results from the raw and normalized values.  
+
+All ligand values are from COL1 MEPs.  
+
+```{r, fig.width=5.5, fig.height=5}
+validation_ligands_lower <- c("BMP2", "CXCL1")
+validation_ligands_middle <- c("WNT3A|1", "PDGFB|1", "FGF2|3", "TGFB1||Cterminus")
+validation_ligands_upper <- c("NRG1|1", "HGF|1", "TNFSF11|1")
+df_ligands_extremes <- df_ligands %>%
+  mutate(Upper_Raw = Ligand %in% validation_ligands_upper,
+         Lower_Raw =  Ligand %in% validation_ligands_lower,
+         Raw_Group = "middle",
+         Upper_Norm = Ligand %in% validation_ligands_upper,
+         Lower_Norm =  Ligand %in% validation_ligands_lower,
+         Norm_Group = "middle") %>%
+  filter(ECMp == "COL1",
+         !Ligand %in% c("TGFB1||LAP","NRG1|10","NRG1|6", "CXCL12|Beta" )) %>%
+  mutate(Ligand = str_remove(Ligand, "[|].*"),
+         Ligand = str_replace(Ligand, "TGFB1", "TGFB"),
+         Ligand = str_replace(Ligand, "TNFSF11", "TNFS11"),
+         Ligand = str_replace(Ligand, "WNT3A", "WNT3"),
+         Ligand = str_replace(Ligand, "FBS", "Control")) 
+
+df_ligands_extremes$Raw_Group[df_ligands_extremes$Upper_Raw]<- "upper"
+df_ligands_extremes$Raw_Group[df_ligands_extremes$Lower_Raw]<- "lower"
+df_ligands_extremes$Norm_Group[df_ligands_extremes$Upper_Norm]<- "upper"
+df_ligands_extremes$Norm_Group[df_ligands_extremes$Lower_Norm]<- "lower"
+
+```
+
+
+
+
+
+Bar charts show median values with standard error of the mean.  
+
+```{r maximalKRT19+}
+  
+p <- ggplot(df_ligands_extremes, aes(x=reorder(Ligand, Cytoplasm_PA_Gated_KRT19PositiveProportionNorm, FUN=median),
+                    y=Cytoplasm_PA_Gated_KRT19PositiveProportionNorm,
+                    fill = Norm_Group,
+                    ymin = Cytoplasm_PA_Gated_KRT19PositiveProportionNorm - Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem,
+                    ymax = Cytoplasm_PA_Gated_KRT19PositiveProportionNorm + Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem))+
+  geom_col(stat = "identity")+
+    geom_errorbar(alpha = .6) +
+  scale_fill_manual(values = c("upper"= lep_color, "middle" = "gray", "lower" = mep_color)) +
+  labs(x="Ligand",
+       y="Luminal proportion",
+       fill = "Group",
+       title="Normalized luminal proportion by ligand (COL1 spots)")  +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = rel(.8), angle=90))
+p
+
+if(create_pdfs){
+  pdf("../plots/MEMA_norm_ligand_bars.pdf", height = 6, useDingbats = FALSE)
+  print(p)
+  dev_off_res <- dev.off()
+}
+
+```
+
+
+```{r compare_screen_and_validation}
+
+ligand_order_norm <- df_ligands_extremes %>%
+  arrange(Cytoplasm_PA_Gated_KRT19PositiveProportionNorm) %>%
+  pull(Ligand)
+
+show_notch <- FALSE
+
+#### normalize within experiments
+validation_data_controls <- validation_data %>%
+  filter(Ligand == "Control") %>%
+  group_by(Experiment, Ligand, ECMp) %>%
+    summarise(K19_LEP_median = median(K19_LEP)) %>%
+  ungroup() %>%
+  select(Experiment, K19_LEP_median)
+
+val_data_norm <- validation_data %>%
+  left_join(validation_data_controls, by = "Experiment") %>%
+  mutate(K19_LEP_norm = K19_LEP/K19_LEP_median,
+         Ligand = factor(Ligand, levels = ligand_order_norm))
+
+control_line <- val_data_norm %>%
+  filter(Ligand == "Control") %>%
+  pull(K19_LEP_norm) %>%
+  median()
+
+p <- ggplot(val_data_norm, aes(x = Ligand, y = K19_LEP_norm)) +
+  geom_boxplot(fill = "transparent", outlier.size = 0, notch = show_notch) +
+  geom_hline(yintercept = control_line, color = "blue") 
+p <- p + geom_point(aes(colour = factor(Experiment)), position = position_dodge(width = 0.90), size = .5, alpha = .8) +
+  labs(title = "Luminal cell proportions in validation experiments",
+       subtitle = "Collagen type 1 coated wells, HMEC240L cells, batch normalized",
+       y = "Proportion of luminal cells (fold change)",
+       x = "ligand treatment",
+       colour = "Experiment") +
+  theme_bw()
+p
+
+if(create_pdfs){
+  pdf("../plots/HGF_well_norm_boxplots.pdf", height = 5, useDingbats = FALSE)
+  print(p)
+  dev_off_res <- dev.off()
+}
+
+#Summarize datasets and combine
+val_data_sum <- val_data_norm %>%
+  group_by(Ligand, ECMp, Cells) %>%
+  summarise(K19_LEP = median(K19_LEP),
+            K19_LEP_norm = median(K19_LEP_norm)) %>%
+  ungroup()
+
+df <- df_ligands_extremes %>%
+  filter(ECMp == "COL1",
+         !Ligand %in% c("TGFB1||LAP","NRG1|10","NRG1|6" )) %>%
+  mutate(Ligand = str_remove(Ligand, "[|].*"),
+         Ligand = str_replace(Ligand, "TGFB1", "TGFB"),
+         Ligand = str_replace(Ligand, "TNFSF11", "TNFS11"),
+         Ligand = str_replace(Ligand, "WNT3A", "WNT3"),
+         Ligand = str_replace(Ligand, "FBS", "Control"),
+         KRT19PositivePercentNorm = 100*Cytoplasm_PA_Gated_KRT19PositiveProportionNorm) %>%
+  inner_join(val_data_sum, by = c("Ligand", "ECMp"))
+
+p <- ggplot(df, aes(x = KRT19PositivePercentNorm,
+                    y = K19_LEP_norm,
+                    color = Norm_Group,
+                    label = Ligand)) +
+  geom_point(size = 4) +
+  geom_text(nudge_y = .04, size = 2, color = "black") +
+  scale_color_manual(values = c("upper"= lep_color, "middle" = "gray", "lower" = mep_color))  + 
+  labs(title = "Coated wells vs MEMAs",
+              subtitle = "normalized well data",
+       x = "Percent luminal cells in MEMA (normalized)",
+       y = "Luminal cells in wells (fold change)") +
+  theme_bw()
+p
+
+if(create_pdfs){
+  pdf("../plots/HGF_well_norm_vs_MEMA_norm.pdf",  height = 6, useDingbats = FALSE)
+  print(p)
+  dev_off_res <- dev.off()
+}
+
+```
+
+
+```{r MEMA_figure, fig.height=4, fig.width=5}
+
+df <- read_csv(paste0("../Data/",fileName), progress = FALSE) %>%
+         filter(!ECMp == "air") %>%
+  group_by(ArrayRow, ArrayColumn, Well) %>%
+  summarise(ECMp = unique(ECMp)) %>%
+  ungroup()
+
+df_noCOL1 <- df %>%
+  filter(!ECMp == "COL1")
+
+df_COL1 <- df %>%
+  filter(ECMp == "COL1")
+
+
+ECMp_cols <- c(brewer.pal(10, "Paired"), brewer.pal(8, "Dark2"))
+set.seed(42)
+cols <- sample(ECMp_cols, length(unique(df$ECMp)),replace = TRUE)
+names(cols) <- unique(df$ECMp)
+
+p <- ggplot(df_noCOL1, aes(x = ArrayColumn, y = ArrayRow, colour = ECMp)) +
+  geom_point() +
+  scale_colour_manual(values = cols) +
+  scale_y_reverse(breaks = c(1, 10, 20, 30, 35)) +
+  coord_cartesian(x = c(1,20),
+                        y = c(35,1)) +
+  scale_x_continuous(breaks = c(1,10, 20)) +
+  guides(colour = FALSE) +
+  labs(x = "",
+       y = "")+
+  facet_wrap(~Well, nrow = 2) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank())
+p <- p + geom_point(data = df_COL1, shape = 17, color = "black")
+p
+
+if(create_pdfs){
+  pdf("../plots/General_MEMA_cartoon.pdf")
+  #print(p)
+  print(p + theme(strip.text = element_blank(),
+                  axis.text = element_blank(),
+                  axis.ticks = element_blank())
+    )
+  res <- dev.off()
+}
+```
+
+```{r l3_heatmap}
+
+#Choose measured features and remove replicate count and standard errors
+#Summarize to MEP level
+deselect_features <- paste("Orientation|ReplicateCount|_SE|_RR|Cells_",
+                           "Spot_PA_LoessSCC$",
+                           "Cytoplasm_PA_Gated_KRT19Positive_SpotCellCount$",
+                           "Spot_PA_SpotCellCount$",
+                           "Cytoplasm_PA_Gated_KRT19PositiveProportion$",
+                           "Cytoplasm_PA_Gated_KRTClass$", "Cytoplasm_PA_Gated_KRT19Positive$",
+                           "Cytoplasm_CP_AreaShape",
+                           "Cytoplasm_PA_Gated_BasalLuminalNegativeProportion$",
+                           sep = "|")
+meps <- l3 %>%
+  group_by(MEP) %>%
+  select(matches("_CP_|_PA_")) %>%
+  select(-matches(deselect_features)) %>%
+  summarise_all(.funs = median) %>%
+  ungroup()
+
+#z scale within each feature
+meps_clean <- meps %>%
+  select(-MEP) %>%
+  as.matrix() %>%
+  scale() %>%
+  t() %>%
+  as_tibble(rownames = "feature") %>%
+  drop_na() 
+
+dm <- meps_clean %>%
+  select(-feature) %>%
+    as.matrix() %>%
+  rrscale::winsor(fraction = .02)
+
+rownames(dm) <- meps_clean$feature
+colnames(dm) <- meps$MEP 
+
+ECMp <- str_remove(colnames(dm), "_.*")
+ligand <- str_remove(colnames(dm), ".*_")
+
+column_ha <- HeatmapAnnotation(ECMp = ECMp, ligand = ligand, show_legend = FALSE)
+
+meps_hm <- Heatmap(dm,
+              name = "z-score",
+              column_title = "HMEC 240L",
+              column_title_gp = gpar(fontsize = 12),
+              cluster_rows = TRUE,
+              row_km = 7,
+              row_gap = unit(2, "mm"),
+              row_title = " ",
+              show_row_names = TRUE,
+              #right_annotation = row_annots,
+              cluster_columns = TRUE,
+              column_km = 8,
+              show_column_names = FALSE,
+              top_annotation = column_ha,
+              row_names_gp = gpar(fontsize = 4),
+              column_names_gp = gpar(fontsize = 10),
+              use_raster = FALSE)
+meps_hm
+
+column_ha_legend <- HeatmapAnnotation(ECMp = ECMp, ligand = ligand, show_legend = TRUE)
+
+meps_hm_legend <- Heatmap(dm,
+              name = "z-score",
+              column_title = "HMEC 240L",
+              column_title_gp = gpar(fontsize = 12),
+              cluster_rows = TRUE,
+              row_km = 7,
+              row_gap = unit(2, "mm"),
+              row_title = " ",
+              show_row_names = TRUE,
+              #right_annotation = row_annots,
+              cluster_columns = TRUE,
+              column_km = 8,
+              show_column_names = FALSE,
+              top_annotation = column_ha_legend,
+              row_names_gp = gpar(fontsize = 4),
+              column_names_gp = gpar(fontsize = 10),
+              use_raster = FALSE)
+meps_hm_legend
+
+col_order<- column_order(meps_hm_legend)
+ECMp_order <- ECMp[unlist(col_order)]
+ligand_order <- ligand[unlist(col_order)]
+
+res <- tibble(ligand = ligand_order,
+              ECMp = ECMp_order) %>%
+  write_csv(path = "ME_paper_hmec240l_heatmap_columns.csv")
+
+if(create_pdfs){
+  pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap.pdf", width = 8, height = 4)
+  print(meps_hm)
+  res <- dev.off()
+}
+
+if(create_pdfs){
+  pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap_legend.pdf", width = 8, height = 4)
+  print(meps_hm_legend)
+  res <- dev.off()
+}
+
+#create a heatmap with ligands paired with COL1
+ligands <- dm[,str_detect(colnames(dm), "COL1")]
+colnames(ligands) <- str_remove(colnames(ligands), "COL1_")
+
+ligands_hm <- Heatmap(ligands,
+              name = "value",
+              column_title = "HMEC 240L ligands, paired with COL1",
+              column_title_gp = gpar(fontsize = 12),
+              cluster_rows = TRUE,
+              row_km = 10,
+              row_gap = unit(2, "mm"),
+              row_title = " ",
+              show_row_names = TRUE,
+              #right_annotation = row_annots,
+              cluster_columns = TRUE,
+              column_km = 10,
+              show_column_names = TRUE,
+              #top_annotation = column_annots,
+              row_names_gp = gpar(fontsize = 6),
+              column_names_gp = gpar(fontsize = 6),
+              use_raster = FALSE)
+ligands_hm
+
+if(create_pdfs){
+  pdf("../plots/ME_paper_hmec240l_ligands_feature_heatmap.pdf", width = 8, height = 6)
+print(ligands_hm)
+res <- dev.off()
+}
+
+```
+
+```{r OmeroIDs}
+
+set.seed(42)
+image_nbr <- 9
+l3_imageIDs <- l3 %>%
+  filter(MEP %in% c("COL1_BMP2", "COL1_NRG1|1")) %>%
+  select(Barcode,
+         ECMp,
+         Ligand,
+         MEP,
+         ImageID,
+         Well) %>%
+  mutate(ImageID = as.character(ImageID)) %>%
+  group_by(MEP, Barcode, Well) %>%
+  slice_sample(n = image_nbr) %>%
+  summarise(ImageIDs = str_c(ImageID, collapse = ",")) %>%
+  ungroup()
+
+res <- write_tsv(l3_imageIDs, "hmec240l_selected_imageIDs.tsv")
+
+```
+
+```{r ruv_supplementaryFigure}
+
+
+```
