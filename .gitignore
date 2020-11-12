@@ -41,3 +41,15 @@ vignettes/*.pdf
 #Word and powerpoint files
 *.docx
 *.pptx
+
+#Output  files
+*.html
+tables/
+plots/
+
+#Data files
+Data/*
+
+#OS files
+.DS_Store
+
