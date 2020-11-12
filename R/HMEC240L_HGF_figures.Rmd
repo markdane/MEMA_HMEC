@@ -377,7 +377,7 @@ ligand_order <- ligand[unlist(col_order)]
 
 res <- tibble(ligand = ligand_order,
               ECMp = ECMp_order) %>%
-  write_csv(path = "ME_paper_hmec240l_heatmap_columns.csv")
+  write_csv(path = "../tables/ME_paper_hmec240l_heatmap_columns.csv")
 
 if(create_pdfs){
   pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap.pdf", width = 8, height = 4)
@@ -440,7 +440,7 @@ l3_imageIDs <- l3 %>%
   summarise(ImageIDs = str_c(ImageID, collapse = ",")) %>%
   ungroup()
 
-res <- write_tsv(l3_imageIDs, "hmec240l_selected_imageIDs.tsv")
+res <- write_tsv(l3_imageIDs, "../tables/hmec240l_selected_imageIDs.tsv")
 
 ```
 
