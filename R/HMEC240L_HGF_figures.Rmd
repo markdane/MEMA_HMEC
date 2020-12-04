@@ -14,6 +14,9 @@ library(scales)
 library(RColorBrewer)
 library(ComplexHeatmap)
 
+####
+##The MEMA experiments predicted that certain factors: osteomodulin (OMD), low molecular weight hyaluronan (LMWHA), and osteopontin (SPP1), would synergize with HGF to further amplify the K19+ cells, whereas HGF combined with vitronectin (VTN) would not show increase of K19+ cells. 
+###
 ```
 
 
@@ -90,11 +93,6 @@ The MEMA tech paper focuses on experiment design and data normalizations. A biol
 The HMEC240L SS4 assay has DNA(DAPI), basal cell type (KRT5), luminal cell type (KRT19 ) and active S phase (EdU) biomarkers.  The cell counts come from the segmenting and counting the nuclei based on the DAPI signal. The mean intensity of the KRT19 stain in the cytoplasm shows a bimodal distribution that is easily gated into KRT19 high/low populations. Since each ME spot forms its own population, we can calculate the proportion of cells that are in each gate.  
 
 
-#### Luminal proportion  
-
-We can use the gated KRT19 signal in the cytoplasm and the number of DAPI stained nuclei to calculate the proportion of luminal cells at the end of the assay. We can then compare results from the raw and normalized values.  
-
-All ligand values are from COL1 MEPs.  
 
 ```{r, fig.width=5.5, fig.height=5}
 validation_ligands_lower <- c("BMP2", "CXCL1")
@@ -124,7 +122,110 @@ df_ligands_extremes$Norm_Group[df_ligands_extremes$Lower_Norm]<- "lower"
 
 
 
+```{r protein_info}
 
+prep_protein_atlas_annotations <- function(x){
+  res <- x[!is.na(x)]  %>%
+    str_split(pattern = ",") %>%
+    unlist() %>%
+    tibble(annot = .) %>%
+    mutate(annot = str_remove(annot, "^[ ]")) 
+}
+######end of functions
+
+proteinatlas <- read_delim("../Data//proteinatlas.tsv", 
+    "\t", escape_double = FALSE, trim_ws = TRUE)
+
+protein_annotations <- l3 %>%
+  select(Ligand, ECMp) %>%
+  pivot_longer(cols = everything(), names_to = "Type", values_to = "Protein") %>%
+  distinct() %>%
+  mutate(Gene = str_remove_all(Protein, "[|<>].*"),
+         Gene = case_when(Gene == "HA" ~"HAS1",
+                          Gene == "COL1" ~"COL1A1",
+                          Gene == "Wnt5a" ~"WNT5A",
+                          Gene == "COL4" ~ "COL4A1",
+                          Gene == "PDGFAB" ~ "PDGFA",
+                          Gene == "Laminin3B32"  ~"LAMA1",
+                          TRUE ~ Gene)) %>%
+  left_join(proteinatlas, by = c("Gene" = "Gene")) %>%
+  select(Type, Protein, Gene, 'Gene synonym', Ensembl, 'Gene description', Uniprot, 'Protein class', 'Biological process', 'Molecular function', 'Disease involvement', matches('RNA cancer'), matches('RNA tissue'))
+
+#Get molecular function for each ME protein
+molecular_functions <- protein_annotations %>%
+  janitor::clean_names() %>%
+  select(protein, type, molecular_function) %>%
+  mutate(Cytokine = str_detect(molecular_function, "Cytokine"),
+         Growth_factor = str_detect(molecular_function, "Growth factor"),
+         Growth_factor = str_detect(molecular_function, "Growth factor"),
+         Developmental_protein = str_detect(molecular_function, "Developmental protein"),
+         Mitogen = str_detect(molecular_function, "Mitogen"))
+
+protein_class <- prep_protein_atlas_annotations(protein_annotations$`Protein class`) %>%
+  count(annot, sort = TRUE) %>%
+  mutate(Protein_class = fct_inorder(annot))
+
+p_class <- ggplot(protein_class, aes(x = Protein_class, y = n)) +
+  geom_col() +
+  labs(title = "MEMA ligand and ECM protein classes",
+       subtitle = "source: The Human Protein Atlas",
+       x = "Protein class",
+       y = "Count") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+p_class
+
+biological_process <- prep_protein_atlas_annotations(protein_annotations$`Biological process`) %>%
+  count(annot, sort = TRUE) %>%
+  mutate(Biological_process = fct_inorder(annot))
+
+p_bio <- ggplot(biological_process, aes(x = Biological_process, y = n)) +
+  geom_col() +
+  labs(title = "MEMA ligand and ECM biological process",
+       subtitle = "source: The Human Protein Atlas",
+       x = "Biological process",
+       y = "Count") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+p_bio
+
+molecular_function <- prep_protein_atlas_annotations(protein_annotations$`Molecular function`) %>%
+  count(annot, sort = TRUE) %>%
+  mutate(Molecular_function = fct_inorder(annot))
+
+p_mol <- ggplot(molecular_function, aes(x = Molecular_function, y = n)) +
+  geom_col() +
+  labs(title = "MEMA ligand and ECM molecular function",
+       subtitle = "source: The Human Protein Atlas",
+       x = "Molecular function",
+       y = "Count") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+p_mol
+
+if(create_pdfs){
+  pdf("../plots/HMEC_HGF_protein_annotations.pdf")
+  print(p_mol)
+  print(p_class)
+  print(p_bio)
+  res <- dev.off()
+}
+```
+
+#### Method
+Download annotations from The Human Protein Atlas  https://www.proteinatlas.org/about/download  
+Merge annotations with ligands and ECM proteins used in the MEMA  
+~6 integrin family proteins did not match annotations and need to be furthered processed  
+Count annotations associated with all of the proteins and display as bar graphs  
+The full set of THPA annotations are `r colnames(proteinatlas)`  
+
+
+
+#### Luminal proportion  
+
+We can use the gated KRT19 signal in the cytoplasm and the number of DAPI stained nuclei to calculate the proportion of luminal cells at the end of the assay. We can then compare results from the raw and normalized values.  
+
+All ligand values are from COL1 MEPs.  
 
 Bar charts show median values with standard error of the mean.  
 
@@ -152,6 +253,32 @@ if(create_pdfs){
   dev_off_res <- dev.off()
 }
 
+####
+##The MEMA experiments predicted that certain factors: osteomodulin (OMD), low molecular weight hyaluronan (LMWHA), and osteopontin (SPP1), would synergize with HGF to further amplify the K19+ cells, whereas HGF combined with vitronectin (VTN) would not show increase of K19+ cells. 
+###
+
+df_HGF <- df_MEPs %>%
+  filter(Ligand == "HGF|1") 
+
+p <- ggplot(df_HGF, aes(x=reorder(ECMp, Cytoplasm_PA_Gated_KRT19PositiveProportionNorm, FUN=median),
+                    y=Cytoplasm_PA_Gated_KRT19PositiveProportionNorm,
+                    ymin = Cytoplasm_PA_Gated_KRT19PositiveProportionNorm - Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem,
+                    ymax = Cytoplasm_PA_Gated_KRT19PositiveProportionNorm + Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem))+
+  geom_col(stat = "identity")+
+    geom_errorbar(alpha = .6) +
+  labs(x="ECM protein",
+       y="Luminal proportion",
+       fill = "Group",
+       title="Normalized luminal proportion of HGF combinations")  +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = rel(.8), angle=90))
+p
+
+if(create_pdfs){
+  pdf("../plots/MEMA_norm_HGF_bars.pdf", height = 6, useDingbats = FALSE)
+  print(p)
+  dev_off_res <- dev.off()
+}
 ```
 
 
@@ -240,8 +367,9 @@ if(create_pdfs){
 ```
 
 
-```{r MEMA_figure, fig.height=4, fig.width=5}
+```{r MEMA_figure, fig.height=7, fig.width=7}
 
+#read in raw file so that all spots are shown
 df <- read_csv(paste0("../Data/",fileName), progress = FALSE) %>%
          filter(!ECMp == "air") %>%
   group_by(ArrayRow, ArrayColumn, Well) %>%
@@ -253,7 +381,6 @@ df_noCOL1 <- df %>%
 
 df_COL1 <- df %>%
   filter(ECMp == "COL1")
-
 
 ECMp_cols <- c(brewer.pal(10, "Paired"), brewer.pal(8, "Dark2"))
 set.seed(42)
@@ -287,9 +414,35 @@ if(create_pdfs){
     )
   res <- dev.off()
 }
+
+#Plot replicates in the original data
+replicates <- df %>%
+  filter(!str_detect(ECMp, "gelatin")) %>%
+  select(ECMp) %>%
+  group_by(ECMp) %>%
+  count(name = "count") %>%
+    arrange(desc(count)) %>%
+  ungroup() %>%
+  mutate(ECMp = fct_inorder(ECMp),
+         count_per_array = count/8)
+replicate_count_median <- median(replicates$count_per_array)
+p <- ggplot(replicates, aes(x = ECMp, y = count_per_array)) +
+  geom_col() +
+  geom_hline(yintercept = replicate_count_median, color = "blue") +
+  scale_y_log10() +
+  labs(title = "Number of replicates per MEMA",
+       subtitle = paste("median replicate count:",replicate_count_median),
+       x = "ECM protein",
+       y = "Replicates per array") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90))
+p
+
 ```
 
 ```{r l3_heatmap}
+
+
 
 #Choose measured features and remove replicate count and standard errors
 #Summarize to MEP level
@@ -303,7 +456,7 @@ deselect_features <- paste("Orientation|ReplicateCount|_SE|_RR|Cells_",
                            "Cytoplasm_PA_Gated_BasalLuminalNegativeProportion$",
                            sep = "|")
 meps <- l3 %>%
-  group_by(MEP) %>%
+  group_by(MEP, Ligand, ECMp) %>%
   select(matches("_CP_|_PA_")) %>%
   select(-matches(deselect_features)) %>%
   summarise_all(.funs = median) %>%
@@ -311,12 +464,13 @@ meps <- l3 %>%
 
 #z scale within each feature
 meps_clean <- meps %>%
-  select(-MEP) %>%
+  select(-MEP, -Ligand, -ECMp) %>%
   as.matrix() %>%
   scale() %>%
   t() %>%
   as_tibble(rownames = "feature") %>%
   drop_na() 
+colnames(meps_clean) <- c("feature", meps$MEP)
 
 dm <- meps_clean %>%
   select(-feature) %>%
@@ -329,8 +483,26 @@ colnames(dm) <- meps$MEP
 ECMp <- str_remove(colnames(dm), "_.*")
 ligand <- str_remove(colnames(dm), ".*_")
 
-column_ha <- HeatmapAnnotation(ECMp = ECMp, ligand = ligand, show_legend = FALSE)
+#Get molecular function for each ME protein
+# molecular_functions <- protein_annotations %>%
+#   janitor::clean_names() %>%
+#   select(protein, type, molecular_function) 
 
+ligand_molecular_function <- meps %>%
+  select(Ligand, ECMp) %>%
+  left_join(molecular_functions, by = c("Ligand" = "protein"))
+
+column_ha <- HeatmapAnnotation(ECMp = ECMp,
+                               ligand = ligand,
+                               Cytokine = ligand_molecular_function$Cytokine,
+                               Growth_factor = ligand_molecular_function$Growth_factor,
+                               Developmental_protein = ligand_molecular_function$Developmental_protein,
+                               Mitogen = ligand_molecular_function$Mitogen,
+                               col = list(Cytokine = c("FALSE" = "transparent", "TRUE" = "black"),
+                                          Growth_factor = c("FALSE" = "transparent", "TRUE" = "black"),
+                                          Developmental_protein = c("FALSE" = "transparent", "TRUE" = "black"),
+                                          Mitogen = c("FALSE" = "transparent", "TRUE" = "black")),
+                               show_legend = FALSE)
 meps_hm <- Heatmap(dm,
               name = "z-score",
               column_title = "HMEC 240L",
@@ -345,33 +517,24 @@ meps_hm <- Heatmap(dm,
               column_km = 8,
               show_column_names = FALSE,
               top_annotation = column_ha,
-              row_names_gp = gpar(fontsize = 4),
+              row_names_gp = gpar(fontsize = 6),
               column_names_gp = gpar(fontsize = 10),
               use_raster = FALSE)
-meps_hm
+draw(meps_hm)
 
-column_ha_legend <- HeatmapAnnotation(ECMp = ECMp, ligand = ligand, show_legend = TRUE)
 
-meps_hm_legend <- Heatmap(dm,
-              name = "z-score",
-              column_title = "HMEC 240L",
-              column_title_gp = gpar(fontsize = 12),
-              cluster_rows = TRUE,
-              row_km = 7,
-              row_gap = unit(2, "mm"),
-              row_title = " ",
-              show_row_names = TRUE,
-              #right_annotation = row_annots,
-              cluster_columns = TRUE,
-              column_km = 8,
-              show_column_names = FALSE,
-              top_annotation = column_ha_legend,
-              row_names_gp = gpar(fontsize = 4),
-              column_names_gp = gpar(fontsize = 10),
-              use_raster = FALSE)
-meps_hm_legend
+col_order<- column_order(meps_hm)
+#convert the column order to a tibble with cluster numbers, ligands, ECMps
+# foo <- imap(col_order, function(x, y){
+#   tibble(row_number =x,
+#          Cluster = y)
+#   }) %>%
+#   bind_rows() %>%
+#   mutate(mep = colnames(dm)[row_number],
+#          ligand = str_remove(mep, ".*_"),
+#          ECMp = str_remove(mep, "_.*"))
 
-col_order<- column_order(meps_hm_legend)
+#foo <- bind_rows(col_order, .id = "cluster")
 ECMp_order <- ECMp[unlist(col_order)]
 ligand_order <- ligand[unlist(col_order)]
 
@@ -380,15 +543,15 @@ res <- tibble(ligand = ligand_order,
   write_csv(path = "../tables/ME_paper_hmec240l_heatmap_columns.csv")
 
 if(create_pdfs){
-  pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap.pdf", width = 8, height = 4)
+  pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap.pdf", width = 8, height = 7)
   print(meps_hm)
   res <- dev.off()
 }
 
 if(create_pdfs){
-  pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap_legend.pdf", width = 8, height = 4)
-  print(meps_hm_legend)
-  res <- dev.off()
+  # pdf("../plots/ME_paper_hmec240l_meps_feature_heatmap_legend.pdf", width = 8, height = 4)
+  # print(meps_hm_legend)
+  # res <- dev.off()
 }
 
 #create a heatmap with ligands paired with COL1
@@ -427,7 +590,7 @@ res <- dev.off()
 set.seed(42)
 image_nbr <- 9
 l3_imageIDs <- l3 %>%
-  filter(MEP %in% c("COL1_BMP2", "COL1_NRG1|1")) %>%
+  filter(MEP %in% c("COL1_BMP2", "COL1_NRG1|1", "COL1_HGF|1")) %>%
   select(Barcode,
          ECMp,
          Ligand,
@@ -444,7 +607,4 @@ res <- write_tsv(l3_imageIDs, "../tables/hmec240l_selected_imageIDs.tsv")
 
 ```
 
-```{r ruv_supplementaryFigure}
 
-
-```
