@@ -7,16 +7,16 @@ output:
 
 
 ```{r "setup", include=FALSE}
-knitr::opts_chunk$set(fig.width=6, fig.height=4, echo=FALSE, warning=FALSE, message=FALSE, cache=FALSE)
+knitr::opts_chunk$set(fig.width=6, fig.height=4, echo=FALSE, warning=FALSE, message=FALSE, cache=TRUE)
 
 library(tidyverse)
 library(scales)
 library(RColorBrewer)
 library(ComplexHeatmap)
 
-####
-##The MEMA experiments predicted that certain factors: osteomodulin (OMD), low molecular weight hyaluronan (LMWHA), and osteopontin (SPP1), would synergize with HGF to further amplify the K19+ cells, whereas HGF combined with vitronectin (VTN) would not show increase of K19+ cells. 
-###
+write_pdfs <- TRUE
+write_csvs <- TRUE
+
 ```
 
 
@@ -95,15 +95,15 @@ The HMEC240L SS4 assay has DNA(DAPI), basal cell type (KRT5), luminal cell type 
 
 
 ```{r, fig.width=5.5, fig.height=5}
-validation_ligands_lower <- c("BMP2", "CXCL1")
+validation_ligands_depleted <- c("BMP2", "CXCL1")
 validation_ligands_middle <- c("WNT3A|1", "PDGFB|1", "FGF2|3", "TGFB1||Cterminus")
-validation_ligands_upper <- c("NRG1|1", "HGF|1", "TNFSF11|1")
+validation_ligands_enriched <- c("NRG1|1", "HGF|1", "TNFSF11|1")
 df_ligands_extremes <- df_ligands %>%
-  mutate(Upper_Raw = Ligand %in% validation_ligands_upper,
-         Lower_Raw =  Ligand %in% validation_ligands_lower,
+  mutate(enriched_Raw = Ligand %in% validation_ligands_enriched,
+         depleted_Raw =  Ligand %in% validation_ligands_depleted,
          Raw_Group = "middle",
-         Upper_Norm = Ligand %in% validation_ligands_upper,
-         Lower_Norm =  Ligand %in% validation_ligands_lower,
+         enriched_Norm = Ligand %in% validation_ligands_enriched,
+         depleted_Norm =  Ligand %in% validation_ligands_depleted,
          Norm_Group = "middle") %>%
   filter(ECMp == "COL1",
          !Ligand %in% c("TGFB1||LAP","NRG1|10","NRG1|6", "CXCL12|Beta" )) %>%
@@ -113,10 +113,10 @@ df_ligands_extremes <- df_ligands %>%
          Ligand = str_replace(Ligand, "WNT3A", "WNT3"),
          Ligand = str_replace(Ligand, "FBS", "Control")) 
 
-df_ligands_extremes$Raw_Group[df_ligands_extremes$Upper_Raw]<- "upper"
-df_ligands_extremes$Raw_Group[df_ligands_extremes$Lower_Raw]<- "lower"
-df_ligands_extremes$Norm_Group[df_ligands_extremes$Upper_Norm]<- "upper"
-df_ligands_extremes$Norm_Group[df_ligands_extremes$Lower_Norm]<- "lower"
+df_ligands_extremes$Raw_Group[df_ligands_extremes$enriched_Raw]<- "enriched"
+df_ligands_extremes$Raw_Group[df_ligands_extremes$depleted_Raw]<- "depleted"
+df_ligands_extremes$Norm_Group[df_ligands_extremes$enriched_Norm]<- "enriched"
+df_ligands_extremes$Norm_Group[df_ligands_extremes$depleted_Norm]<- "depleted"
 
 ```
 
@@ -238,13 +238,15 @@ p <- ggplot(df_ligands_extremes, aes(x=reorder(Ligand, Cytoplasm_PA_Gated_KRT19P
                     ymax = Cytoplasm_PA_Gated_KRT19PositiveProportionNorm + Cytoplasm_PA_Gated_KRT19PositiveProportionNorm_sem))+
   geom_col(stat = "identity")+
     geom_errorbar(alpha = .6) +
-  scale_fill_manual(values = c("upper"= lep_color, "middle" = "gray", "lower" = mep_color)) +
+  scale_fill_manual(values = c("enriched"= lep_color, "middle" = "gray", "depleted" = mep_color)) +
   labs(x="Ligand",
        y="Luminal proportion",
        fill = "Group",
        title="Normalized luminal proportion by ligand (COL1 spots)")  +
   theme_bw() +
-  theme(axis.text.x = element_text(size = rel(.8), angle=90))
+  theme(axis.text.x = element_text(size = rel(.9),
+                                   angle=90,
+                                   color = "black"))
 p
 
 if(create_pdfs){
@@ -258,7 +260,11 @@ if(create_pdfs){
 ###
 
 df_HGF <- df_MEPs %>%
-  filter(Ligand == "HGF|1") 
+  filter(Ligand == "HGF|1") %>%
+  mutate(ECMp = case_when(ECMp == "HA<500kDa" ~ "LMWHA",
+                           ECMp == "HA>500kDa" ~ "HMWHA",
+                          ECMp == "SPP1|A" ~ "SPP1",
+                           TRUE ~ ECMp))
 
 p <- ggplot(df_HGF, aes(x=reorder(ECMp, Cytoplasm_PA_Gated_KRT19PositiveProportionNorm, FUN=median),
                     y=Cytoplasm_PA_Gated_KRT19PositiveProportionNorm,
@@ -271,7 +277,9 @@ p <- ggplot(df_HGF, aes(x=reorder(ECMp, Cytoplasm_PA_Gated_KRT19PositiveProporti
        fill = "Group",
        title="Normalized luminal proportion of HGF combinations")  +
   theme_bw() +
-  theme(axis.text.x = element_text(size = rel(.8), angle=90))
+  theme(axis.text.x = element_text(size = rel(1),
+                                   angle=90,
+                                   color = "black"))
 p
 
 if(create_pdfs){
@@ -311,13 +319,15 @@ control_line <- val_data_norm %>%
 p <- ggplot(val_data_norm, aes(x = Ligand, y = K19_LEP_norm)) +
   geom_boxplot(fill = "transparent", outlier.size = 0, notch = show_notch) +
   geom_hline(yintercept = control_line, color = "blue") 
-p <- p + geom_point(aes(colour = factor(Experiment)), position = position_dodge(width = 0.90), size = .5, alpha = .8) +
+p <- p + geom_point(aes(colour = factor(Experiment)), position = position_dodge(width = 0.90), size = .8, alpha = .9) +
   labs(title = "Luminal cell proportions in validation experiments",
        subtitle = "Collagen type 1 coated wells, HMEC240L cells, batch normalized",
        y = "Proportion of luminal cells (fold change)",
        x = "ligand treatment",
        colour = "Experiment") +
-  theme_bw()
+  guides(color = guide_legend(override.aes = list(size=3))) +
+  theme_bw() + 
+  theme(axis.text.x = element_text(color = "black"))
 p
 
 if(create_pdfs){
@@ -350,7 +360,7 @@ p <- ggplot(df, aes(x = KRT19PositivePercentNorm,
                     label = Ligand)) +
   geom_point(size = 4) +
   geom_text(nudge_y = .04, size = 2, color = "black") +
-  scale_color_manual(values = c("upper"= lep_color, "middle" = "gray", "lower" = mep_color))  + 
+  scale_color_manual(values = c("enriched"= lep_color, "middle" = "gray", "depleted" = mep_color))  + 
   labs(title = "Coated wells vs MEMAs",
               subtitle = "normalized well data",
        x = "Percent luminal cells in MEMA (normalized)",
@@ -482,7 +492,13 @@ colnames(dm) <- meps$MEP
 
 ECMp <- str_remove(colnames(dm), "_.*")
 ligand <- str_remove(colnames(dm), ".*_")
+HGF <- str_detect(colnames(dm), "HGF")
 
+HGF_ECMps <- case_when(colnames(dm) %in% c("HA<500kDa_HGF|1","SPP1|A_HGF|1","OMD_HGF|1") ~ "enriched",
+                 colnames(dm) %in% c("VTN_HGF|1") ~ "depleted",
+                 TRUE ~ "middle"
+)
+#annotation structure: values of enriched, depleted and middle
 #Get molecular function for each ME protein
 # molecular_functions <- protein_annotations %>%
 #   janitor::clean_names() %>%
@@ -494,11 +510,15 @@ ligand_molecular_function <- meps %>%
 
 column_ha <- HeatmapAnnotation(ECMp = ECMp,
                                ligand = ligand,
+                               HGF = HGF,
+                               HGF_ECMps = HGF_ECMps,
                                Cytokine = ligand_molecular_function$Cytokine,
                                Growth_factor = ligand_molecular_function$Growth_factor,
                                Developmental_protein = ligand_molecular_function$Developmental_protein,
                                Mitogen = ligand_molecular_function$Mitogen,
-                               col = list(Cytokine = c("FALSE" = "transparent", "TRUE" = "black"),
+                               col = list(HGF = c("FALSE" = "transparent", "TRUE" = "black"),
+                                          HGF_ECMps = c("depleted" = mep_color, "middle" = "transparent", "enriched"= lep_color),
+                                          Cytokine = c("FALSE" = "transparent", "TRUE" = "black"),
                                           Growth_factor = c("FALSE" = "transparent", "TRUE" = "black"),
                                           Developmental_protein = c("FALSE" = "transparent", "TRUE" = "black"),
                                           Mitogen = c("FALSE" = "transparent", "TRUE" = "black")),
@@ -605,6 +625,41 @@ l3_imageIDs <- l3 %>%
 
 res <- write_tsv(l3_imageIDs, "../tables/hmec240l_selected_imageIDs.tsv")
 
+```
+
+```{r HGF_MEMA_Validation}
+##The MEMA experiments predicted that certain factors: osteomodulin (OMD), low molecular weight hyaluronan (LMWHA), and osteopontin (SPP1), would synergize with HGF to further amplify the K19+ cells, whereas HGF combined with vitronectin (VTN) would not show increase of K19+ cells. 
+
+val_data_HGF <- read_csv("../Data/IF_ECM_K19_240_20201203.csv") %>%
+  filter(Ligand == "HGF") %>%
+  group_by(ECM) %>%
+  summarise(LEP = median(LEP)) %>%
+  ungroup() 
+
+MEMA_val_HGF <- df_HGF %>%
+  mutate(ECMp = case_when(ECMp == "HA<500kDa" ~ "LMWHA",
+                           ECMp == "SPP1|A" ~ "SPP1",
+                           TRUE ~ ECMp)) %>%
+  right_join(val_data_HGF, by = c("ECMp" = "ECM")) %>%
+  drop_na()
+
+HGF_MEMA_val_scatterplot <- ggplot(MEMA_val_HGF, aes(x = 100*Cytoplasm_PA_Gated_KRT19PositiveProportionNorm,
+                    y = LEP,
+                    label = ECMp)) +
+  geom_point(size = 4) +
+  geom_text(nudge_y = .04, size = 2, color = "black") +
+  scale_color_manual(values = c("enriched"= lep_color, "middle" = "gray", "depleted" = mep_color))  + 
+  labs(title = "Concordance of MEMA and coated well HGF microenvironments",
+       x = "Percent luminal cells in MEMA (normalized)",
+       y = "Luminal cells in wells (fold change)") +
+  theme_bw()
+HGF_MEMA_val_scatterplot
+
+if(write_pdfs){
+  pdf("../plots/HMEC_HGF_3C.pdf",width = 4, height = 4,useDingbats = FALSE)
+  print(HGF_MEMA_val_scatterplot)
+  res <- dev.off()
+}
 ```
 
 
