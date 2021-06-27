@@ -416,7 +416,7 @@ p <- p + geom_point(data = df_COL1, shape = 17, color = "black")
 p
 
 if(create_pdfs){
-  pdf("../plots/General_MEMA_cartoon.pdf")
+  pdf("../plots/General_MEMA_cartoon.pdf",useDingbats = FALSE)
   #print(p)
   print(p + theme(strip.text = element_blank(),
                   axis.text = element_blank(),
